@@ -11,7 +11,24 @@ import { chat, clearHistory, getHistoryLength } from "./ai.js";
 const token = process.env["TELEGRAM_BOT_TOKEN"];
 if (!token) throw new Error("TELEGRAM_BOT_TOKEN environment variable is required.");
 
-const bot = new TelegramBot(token, { polling: true });
+const bot = new TelegramBot(token, { polling: { autoStart: false } });
+
+async function startPolling() {
+  try {
+    await bot.startPolling();
+    console.log("Telegram bot polling started.");
+  } catch (err: any) {
+    if (err?.code === "ETELEGRAM" && err?.message?.includes("409")) {
+      console.log("Another bot instance is running. Waiting 15s before retrying...");
+      setTimeout(startPolling, 15000);
+    } else {
+      console.error("Failed to start polling:", err);
+      setTimeout(startPolling, 10000);
+    }
+  }
+}
+
+startPolling();
 
 function getUserId(msg: TelegramBot.Message): number {
   return msg.from?.id ?? 0;
@@ -158,8 +175,15 @@ bot.on("message", async (msg) => {
   }
 });
 
-bot.on("polling_error", (err) => console.error("Polling error:", err));
+bot.on("polling_error", (err) => {
+  const e = err as any;
+  if (e?.code === "ETELEGRAM" && e?.message?.includes("409")) {
+    console.log("409 conflict — another instance active, will retry...");
+  } else {
+    console.error("Polling error:", err);
+  }
+});
+
 bot.on("error", (err) => console.error("Bot error:", err));
 
-console.log("Telegram bot started with polling");
 export { bot };
